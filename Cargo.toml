@@ -1,0 +1,17 @@
+[package]
+name = "gparallel"
+version = "0.2.1"
+description = "Single‑binary workstation GPU scheduler: feed a list of shell commands and gparallel will run them one‑by‑one on every visible GPU (1 GPU per process). Perfect for researchers who don't need heavyweight clusters like Slurm or run.ai."
+license = "MIT"
+readme = "README.md"
+keywords = ["gpu", "scheduler", "cuda", "parallel", "cli"]
+repository = "https://github.com/combinatrix-ai/gparallel"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+clap   = { version = "4", features = ["derive"] }
+tokio  = { version = "1", features = ["full"] }
+uuid   = { version = "1", features = ["v4"] }
+which  = "6"
+nvml-wrapper = "0.9"
