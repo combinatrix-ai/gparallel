@@ -1,97 +1,268 @@
 # gparallel 🖥️🚀
 
-**gparallel** is a *single‑binary GPU scheduler* for desktops, workstations and small on‑prem servers—**think “GNU parallel for CUDA GPUs.”**
-It fills the gap between handwritten shell loops and heavyweight cluster managers such as Slurm, Kubernetes, or run.ai. 
+**gparallel** is a *GPU-aware parallel job scheduler* with a ** tmux-like TUI** for managing GPU workloads on single machines. Perfect for researchers and ML engineers who need to maximize GPU utilization without the complexity of cluster managers.
 
-* Drop the binary on a machine that has multiple CUDA GPUs.
-* Pipe a list of commands to **gparallel**.
-* Each command runs on exactly one free GPU.
-* As soon as a job finishes, the GPU is immediately re‑used for the next item in the queue.
+![gparallel](https://img.shields.io/badge/version-0.2.1-blue.svg)
+![License](https://img.shields.io/badge/license-MIT-green.svg)
 
-> **Made for researchers, data‑scientists and hobbyists** who want to saturate every GPU in a
-> single box without rewriting their scripts or managing a cluster.
+## Features
+
+- 🚀 **Automatic GPU allocation** - Jobs distributed across available GPUs
+- 📊 **Real-time TUI** - Beautiful terminal interface with GPU status, job queue, and live logs
+- 📜 **Smart scrolling** - Navigate through large job queues with arrow keys
+- 🔄 **Job state tracking** - Visual indicators for QUEUE, RUN, DONE, and FAIL states
+- 💾 **GPU memory monitoring** - Real-time memory usage with color-coded indicators
+- 🎯 **GPU status indicators** - ● (running) / ○ (idle) status for each GPU
+- ⚡ **Non-blocking execution** - Jobs start immediately as GPUs become available
+- 🛑 **Graceful shutdown** - Ctrl+C kills all running jobs cleanly
 
 ---
 
-## Quick Start
+## Quick Start
 
 ```bash
-# Create a command list (1 command per line)
+# Create a command list (one command per line)
 cat > commands.txt <<'EOF'
-python train.py --cfg exp1
-python train.py --cfg exp2
-python train.py --cfg exp3
+python train.py --model bert --epochs 10
+python train.py --model gpt2 --epochs 20
+python eval.py --checkpoint model_best.pt
 EOF
 
-# Fire and forget 🏃‍♂️
-cat commands.txt | gparallel
+# Run with TUI (default)
+gparallel commands.txt
+
+# Run without TUI for CI/scripting
+gparallel commands.txt --no-tui
 ```
 
-Typical output (8 × A100 example):
+## Terminal UI
+
+When running in TUI mode, gparallel displays a comprehensive interface:
+
 ```
-[gparallel] launch job 3c93… on GPU 0: python train.py --cfg exp1
-[gparallel] launch job f1ed… on GPU 1: python train.py --cfg exp2
-…
-[gparallel] finished job 3c93… (GPU 0)
-[gparallel] launch job 7a61… on GPU 0: python train.py --cfg exp4
+┌─ GPUs ───────────────────┐┌─ Job queue ──────────────────────────────────┐
+│0 ● RTX4090  20312 MB     ││3c93a4f1 train.py --model bert    RUN  G0    │
+│1 ○ RTX4090  24576 MB     ││[f1ed8a92 train.py --model gpt2    QUEUE]    │ 
+│2 ● RTX4090  18432 MB     ││a8b2c3d4 eval.py --checkpoint...  RUN  G2    │
+└──────────────────────────┘└──────────────────────────────────────────────┘
+┌─ Live log : job #f1ed8a92 (tail -f) ─────────────────────────────────┐
+│No logs yet for job f1ed8a92 (train.py --model gpt2)                  │
+│                                                                       │
+└───────────────────────────────────────────────────────────────────────┘
+↑/↓ Navigate jobs  q Quit (jobs continue)  Ctrl+C Force quit & stop all jobs  Auto-exit when all jobs complete
 ```
+
+### UI Components
+
+1. **GPU Panel** (top-left)
+   - GPU ID and name
+   - Status indicator: ● (running job) / ○ (idle)
+   - Available memory in MB with color coding:
+     - 🟢 Green: <50% usage
+     - 🟡 Yellow: 50-80% usage
+     - 🔴 Red: >80% usage
+
+2. **Job Queue Panel** (top-right)
+   - Job ID (first 8 chars of UUID)
+   - Command (truncated if too long)
+   - State: QUEUE, RUN (with GPU), DONE, or FAIL
+   - Scrollable with ↑/↓ keys when many jobs exist
+
+3. **Live Log Panel** (bottom)
+   - Shows stdout/stderr from selected job
+   - Auto-selects first job
+   - Updates in real-time
+   - Limited to last 1000 lines per job
+
+### Keyboard Controls
+
+- **↑/↓** - Navigate through jobs in the queue
+- **q** - Quit gparallel (jobs continue running in background)
+- **Ctrl+C** - Force quit and terminate all running jobs
 
 ---
 
 ## Installation
 
-```bash
-# Using Cargo (recommended)
-cargo install gparallel            # crates.io (once published)
+### From Source (Recommended)
 
-# Or build from source
-cargo build --release              # binary at target/release/gparallel
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/gparallel
+cd gparallel
+
+# Build with Cargo
+cargo build --release
+
+# Copy to your PATH
+sudo cp target/release/gparallel /usr/local/bin/
 ```
 
-The binary is fully static (musl) and contains no runtime dependencies besides the NVIDIA driver.
+### Using Cargo
+
+```bash
+# Once published to crates.io
+cargo install gparallel
+```
+
+### Dependencies
+
+- Rust 1.70+
+- NVIDIA drivers and CUDA toolkit
+- Terminal with UTF-8 support for UI elements
+
+---
+
+## Usage
+
+### Basic Usage
+
+```bash
+# Run jobs from a file
+gparallel jobs.txt
+
+# Specify visible GPUs
+CUDA_VISIBLE_DEVICES=0,2,4 gparallel jobs.txt
+
+# Disable TUI for scripts/CI
+gparallel jobs.txt --no-tui
+```
+
+### Command File Format
+
+Create a text file with one command per line:
+
+```bash
+# train_jobs.txt
+python train.py --config configs/experiment1.yaml
+python train.py --config configs/experiment2.yaml
+python train.py --config configs/experiment3.yaml
+./run_benchmark.sh --gpu-test
+jupyter nbconvert --execute notebook.ipynb
+```
+
+### Generating Commands Dynamically
+
+```bash
+# Generate parameter sweep
+for lr in 0.01 0.001 0.0001; do
+    for bs in 32 64 128; do
+        echo "python train.py --lr $lr --batch-size $bs"
+    done
+done > sweep_jobs.txt
+
+gparallel sweep_jobs.txt
+```
 
 ---
 
 ## How It Works
 
-1. **Detect GPUs** in the following order:
-   1. Use the IDs listed in `CUDA_VISIBLE_DEVICES` if present.
-   2. Query NVML for the physical device count.
-   3. Fallback to counting lines of `nvidia‑smi -L`.
-   4. If all else fails, assume GPU 0 and print a warning.
-2. Maintain two queues:
-   * `gpu_pool` — free GPU IDs (Tokio unbounded channel).
-   * `job_queue` — pending shell commands (async `Mutex<VecDeque<…>>`).
-3. When a command arrives it is either executed immediately (if a GPU is free) or
-   stored in `job_queue`.
-4. Each job is spawned via `bash -c …` with `CUDA_VISIBLE_DEVICES` set to a single ID.
-5. After a job exits, the same GPU picks the next queued command; if none are left it
-   returns the GPU to `gpu_pool`.
+1. **GPU Detection**
+   - Respects `CUDA_VISIBLE_DEVICES` if set
+   - Uses NVML for GPU information and memory monitoring
+   - Falls back to `nvidia-smi` if NVML unavailable
+   - Assumes single GPU if detection fails
 
-Everything runs on a single Tokio runtime; there is **no busy‑waiting**.
+2. **Job Scheduling**
+   - Round-robin assignment to available GPUs
+   - Jobs queued when all GPUs busy
+   - Immediate dispatch when GPU becomes free
+   - Each job gets exclusive GPU via `CUDA_VISIBLE_DEVICES`
 
----
+3. **Process Management**
+   - Spawns jobs via `bash -c`
+   - Captures stdout/stderr to memory buffers
+   - Tracks process IDs for signal handling
+   - Updates job states in real-time
 
-## Roadmap
-
-* `-n <GPUs>` — allow a job to consume *n* GPUs simultaneously.
-* Daemon mode with Unix‑socket to accept jobs while running.
-* Curses / Web UI for live monitoring.
-* Persistent queue (sled / sqlite) for crash‑safe recovery.
+4. **Memory Monitoring**
+   - Polls GPU memory every 2 seconds
+   - Updates display with current free memory
+   - Color-codes based on usage percentage
 
 ---
 
-## FAQ
+## Command Line Options
 
-| Question | Answer |
-|----------|--------|
-| *Can I run multi‑GPU jobs?* | Not yet. A future `-n` flag will reserve multiple GPUs per command. |
-| *Does it work on Windows?*  | It runs under WSL 2 with NVIDIA pass‑through. Native Windows builds are untested. |
-| *How do I limit to a subset of GPUs?* | Set `CUDA_VISIBLE_DEVICES` before invoking **gparallel**. |
+```
+gparallel [OPTIONS] <FILENAME>
+
+Arguments:
+  <FILENAME>  File containing commands to execute (one per line)
+
+Options:
+      --no-tui                     Disable TUI and use plain text output
+  -h, --help                       Print help
+  -V, --version                    Print version
+```
+
+---
+
+## Troubleshooting
+
+### GPU Detection Issues
+
+If gparallel shows incorrect GPUs:
+```bash
+# Check NVIDIA driver
+nvidia-smi
+
+# Force specific GPUs
+export CUDA_VISIBLE_DEVICES=0,1,2
+gparallel jobs.txt
+```
+
+### TUI Not Displaying
+
+If TUI doesn't appear:
+```bash
+# Check terminal capabilities
+echo $TERM
+
+# Force non-TUI mode
+gparallel jobs.txt --no-tui
+```
+
+### Jobs Not Starting
+
+Common causes:
+- All GPUs busy (check GPU panel)
+- Previous job hasn't released GPU yet
+- Command syntax error (check failed jobs)
+
+---
+
+## Contributing
+
+Contributions welcome! Please:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit changes (`git commit -m 'Add amazing feature'`)
+4. Push to branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+### Development Setup
+
+```bash
+# Install Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# Clone and build
+git clone https://github.com/yourusername/gparallel
+cd gparallel
+cargo build
+
+# Run tests
+cargo test
+
+# Run with debug output
+RUST_LOG=debug cargo run -- test_jobs.txt
+```
 
 ---
 
 ## License
 
-MIT © 2025 combinatrix-ai
-
+MIT License - see [LICENSE](LICENSE) file for details.
